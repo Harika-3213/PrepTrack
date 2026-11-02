@@ -126,7 +126,7 @@ router.post("/forgot-password", async (req, res) => {
             });
         }
 
-        const user = await User.findOne({ email });
+        const user = await User.findOne({ email }).select("+resetOtpRequestedAt");
 
         // Use the same response for unknown accounts to avoid revealing registered emails.
         if (!user) {
@@ -197,7 +197,7 @@ router.post("/reset-password", async (req, res) => {
             return res.status(400).json({ message: "Password must contain at least 6 characters" });
         }
 
-        const user = await User.findOne({ email });
+        const user = await User.findOne({ email }).select("+resetOtpHash +resetOtpExpires +resetOtpAttempts +resetOtpRequestedAt");
 
         if (!user || !user.resetOtpHash || !user.resetOtpExpires) {
             return res.status(400).json({ message: "OTP is invalid or expired. Please request a new one." });

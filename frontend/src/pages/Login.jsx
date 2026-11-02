@@ -67,7 +67,10 @@ function Login() {
                             />
                         </div>
 
-                        <label>Password</label>
+                        <div className="password-label-row">
+                            <label>Password</label>
+                            <Link to="/forgot-password">Forgot Password?</Link>
+                        </div>
                         <div className="input-wrapper">
                             <Lock size={18} />
                             <input

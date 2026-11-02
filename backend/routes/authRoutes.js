@@ -17,19 +17,41 @@ const generateToken = (id) => {
 };
 
 const createMailTransporter = () => {
-    const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS } = process.env;
+    const host = process.env.SMTP_HOST;
+    const port = process.env.SMTP_PORT ? Number(process.env.SMTP_PORT) : 465;
+    const user = process.env.SMTP_USER || process.env.EMAIL_USER;
+    const pass = process.env.SMTP_PASS || process.env.EMAIL_PASS || process.env.SMTP_PASSWORD;
+    const service = process.env.SMTP_SERVICE || process.env.EMAIL_SERVICE;
 
-    if (!SMTP_HOST || !SMTP_PORT || !SMTP_USER || !SMTP_PASS) {
+    if (!user || !pass) {
+        return null;
+    }
+
+    if (service) {
+        return nodemailer.createTransport({
+            service,
+            auth: { user, pass }
+        });
+    }
+
+    if (!host) {
+        // If no explicit host, auto-detect Gmail if user address is @gmail.com
+        if (user.endsWith("@gmail.com")) {
+            return nodemailer.createTransport({
+                service: "gmail",
+                auth: { user, pass }
+            });
+        }
         return null;
     }
 
     return nodemailer.createTransport({
-        host: SMTP_HOST,
-        port: Number(SMTP_PORT),
-        secure: Number(SMTP_PORT) === 465,
-        auth: {
-            user: SMTP_USER,
-            pass: SMTP_PASS
+        host,
+        port,
+        secure: port === 465,
+        auth: { user, pass },
+        tls: {
+            rejectUnauthorized: false
         }
     });
 };
@@ -114,32 +136,37 @@ router.post("/forgot-password", async (req, res) => {
     try {
         const email = (req.body.email || "").trim().toLowerCase();
 
-        if (!email) {
-            return res.status(400).json({ message: "Please enter your email address" });
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!email || !emailRegex.test(email)) {
+            return res.status(400).json({ message: "Please enter a valid email address" });
         }
 
         const transporter = createMailTransporter();
+        const smtpUser = process.env.SMTP_USER || process.env.EMAIL_USER;
 
-        if (!transporter || !process.env.SMTP_FROM) {
+        if (!transporter) {
+            console.error("Password reset error: SMTP credentials missing (SMTP_USER/SMTP_PASS).");
             return res.status(503).json({
-                message: "Email service is not configured yet. Please try again later."
+                message: "Email service is not configured on the server. Please check SMTP settings."
             });
         }
 
-        const user = await User.findOne({ email }).select("+resetOtpRequestedAt");
+        const user = await User.findOne({ email }).select("+resetOtpHash +resetOtpExpires +resetOtpAttempts +resetOtpRequestedAt");
 
-        // Use the same response for unknown accounts to avoid revealing registered emails.
         if (!user) {
-            return res.json({
-                message: "If an account exists for this email, a password reset OTP has been sent."
+            return res.status(404).json({
+                message: "No account found with this email address. Please register first."
             });
         }
 
-        if (user.resetOtpRequestedAt &&
-            Date.now() - user.resetOtpRequestedAt.getTime() < 60 * 1000) {
-            return res.status(429).json({
-                message: "Please wait 60 seconds before requesting another OTP."
-            });
+        if (user.resetOtpRequestedAt) {
+            const elapsedMs = Date.now() - user.resetOtpRequestedAt.getTime();
+            if (elapsedMs < 60 * 1000) {
+                const waitSeconds = Math.ceil((60 * 1000 - elapsedMs) / 1000);
+                return res.status(429).json({
+                    message: `Please wait ${waitSeconds} seconds before requesting another OTP.`
+                });
+            }
         }
 
         const otp = crypto.randomInt(100000, 1000000).toString();
@@ -149,13 +176,28 @@ router.post("/forgot-password", async (req, res) => {
         user.resetOtpRequestedAt = new Date();
         await user.save();
 
+        const sender = process.env.SMTP_FROM || `PrepTrack <${smtpUser}>`;
+
         try {
             await transporter.sendMail({
-                from: process.env.SMTP_FROM,
+                from: sender,
                 to: user.email,
                 subject: "Your PrepTrack password reset OTP",
                 text: `Hello ${user.name},\n\nYour PrepTrack password reset OTP is: ${otp}\n\nThis OTP expires in 10 minutes. Do not share it with anyone.\n\nIf you did not request this, you can ignore this email.\n\nPrepTrack Team`,
-                html: `<div style="font-family:Arial,sans-serif;max-width:520px;margin:auto;padding:24px;color:#24324a"><h2 style="color:#3157d5">PrepTrack</h2><p>Hello ${user.name},</p><p>Use this one-time password to reset your PrepTrack account:</p><div style="font-size:30px;font-weight:bold;letter-spacing:8px;background:#f1f4ff;padding:18px;text-align:center;border-radius:8px">${otp}</div><p>This OTP expires in <strong>10 minutes</strong>. Do not share it with anyone.</p><p>If you did not request this, you can ignore this email.</p><p>PrepTrack Team</p></div>`
+                html: `
+                    <div style="font-family:Arial,sans-serif;max-width:520px;margin:auto;padding:24px;color:#24324a;border:1px solid #e0e6ef;border-radius:12px;">
+                        <h2 style="color:#3157d5;margin-top:0;">PrepTrack</h2>
+                        <p>Hello <strong>${user.name}</strong>,</p>
+                        <p>We received a request to reset your password. Use the following 6-digit One-Time Password (OTP) to proceed:</p>
+                        <div style="font-size:32px;font-weight:bold;letter-spacing:8px;background:#f1f4ff;color:#3157d5;padding:18px;text-align:center;border-radius:8px;margin:20px 0;">
+                            ${otp}
+                        </div>
+                        <p style="font-size:13px;color:#667085;">This OTP is valid for <strong>10 minutes</strong>. Do not share this OTP with anyone.</p>
+                        <p style="font-size:13px;color:#667085;">If you did not request this, you can ignore this email.</p>
+                        <hr style="border:none;border-top:1px solid #edf0f5;margin:20px 0;" />
+                        <p style="font-size:12px;color:#98a2b3;margin-bottom:0;">PrepTrack Team &bull; Learn. Practice. Track. Succeed.</p>
+                    </div>
+                `
             });
         } catch (mailError) {
             user.resetOtpHash = undefined;
@@ -163,14 +205,20 @@ router.post("/forgot-password", async (req, res) => {
             user.resetOtpAttempts = 0;
             user.resetOtpRequestedAt = undefined;
             await user.save();
+
             console.error("Password reset email error:", mailError);
-            return res.status(502).json({
-                message: "Could not send the OTP email. Please try again later."
-            });
+            let message = "Could not deliver the OTP email. Please try again later.";
+            if (mailError.code === "EAUTH") {
+                message = "Email authentication failed. Please verify SMTP credentials.";
+            } else if (mailError.code === "ESOCKET" || mailError.code === "ETIMEDOUT") {
+                message = "Connection to email server timed out. Please check SMTP host/port.";
+            }
+
+            return res.status(502).json({ message });
         }
 
         return res.json({
-            message: "If an account exists for this email, a password reset OTP has been sent."
+            message: "A 6-digit OTP has been sent to your email address."
         });
     } catch (error) {
         console.error("Forgot password error:", error);
@@ -200,13 +248,14 @@ router.post("/reset-password", async (req, res) => {
         const user = await User.findOne({ email }).select("+resetOtpHash +resetOtpExpires +resetOtpAttempts +resetOtpRequestedAt");
 
         if (!user || !user.resetOtpHash || !user.resetOtpExpires) {
-            return res.status(400).json({ message: "OTP is invalid or expired. Please request a new one." });
+            return res.status(400).json({ message: "No active OTP request found. Please request a new OTP." });
         }
 
         if (user.resetOtpExpires.getTime() < Date.now()) {
             user.resetOtpHash = undefined;
             user.resetOtpExpires = undefined;
             user.resetOtpAttempts = 0;
+            user.resetOtpRequestedAt = undefined;
             await user.save();
             return res.status(400).json({ message: "OTP has expired. Please request a new one." });
         }
@@ -215,6 +264,7 @@ router.post("/reset-password", async (req, res) => {
             user.resetOtpHash = undefined;
             user.resetOtpExpires = undefined;
             user.resetOtpAttempts = 0;
+            user.resetOtpRequestedAt = undefined;
             await user.save();
             return res.status(429).json({ message: "Too many incorrect attempts. Please request a new OTP." });
         }
@@ -224,7 +274,12 @@ router.post("/reset-password", async (req, res) => {
         if (!isOtpValid) {
             user.resetOtpAttempts += 1;
             await user.save();
-            return res.status(400).json({ message: "Incorrect OTP. Please check and try again." });
+            const remaining = 5 - user.resetOtpAttempts;
+            return res.status(400).json({
+                message: remaining > 0
+                    ? `Incorrect OTP. ${remaining} attempt${remaining === 1 ? "" : "s"} remaining.`
+                    : "Incorrect OTP. Maximum attempts exceeded. Please request a new OTP."
+            });
         }
 
         user.password = await bcrypt.hash(newPassword, 12);

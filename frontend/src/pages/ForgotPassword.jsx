@@ -1,9 +1,11 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
-import { ArrowLeft, ArrowRight, GraduationCap, Mail, Lock, ShieldCheck } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { ArrowLeft, ArrowRight, GraduationCap, Mail, Lock, ShieldCheck, RefreshCw } from "lucide-react";
 import api from "../services/api";
 
 function ForgotPassword() {
+    const navigate = useNavigate();
+
     const [email, setEmail] = useState("");
     const [otp, setOtp] = useState("");
     const [newPassword, setNewPassword] = useState("");
@@ -12,19 +14,43 @@ function ForgotPassword() {
     const [message, setMessage] = useState("");
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
+    const [resendCooldown, setResendCooldown] = useState(0);
+
+    useEffect(() => {
+        if (resendCooldown <= 0) return;
+        const timer = setInterval(() => {
+            setResendCooldown((prev) => (prev > 0 ? prev - 1 : 0));
+        }, 1000);
+        return () => clearInterval(timer);
+    }, [resendCooldown]);
 
     const handleSendOtp = async (e) => {
-        e.preventDefault();
+        if (e) e.preventDefault();
         setError("");
         setMessage("");
+
+        const trimmedEmail = email.trim().toLowerCase();
+        if (!trimmedEmail) {
+            setError("Please enter your email address.");
+            return;
+        }
+
         setLoading(true);
 
         try {
-            const response = await api.post("/auth/forgot-password", { email });
-            setMessage(response.data.message);
+            const response = await api.post("/auth/forgot-password", { email: trimmedEmail });
+            setMessage(response.data.message || "A 6-digit OTP has been sent to your email.");
             setStep(2);
+            setResendCooldown(60);
         } catch (err) {
-            setError(err.response?.data?.message || "Could not send OTP. Please try again.");
+            const backendError = err.response?.data?.message;
+            if (backendError) {
+                setError(backendError);
+            } else if (err.code === "ERR_NETWORK") {
+                setError("Network error: Unable to reach the server. Please check your internet or try again.");
+            } else {
+                setError("Could not send OTP. Please check your email address and try again.");
+            }
         } finally {
             setLoading(false);
         }
@@ -34,6 +60,13 @@ function ForgotPassword() {
         e.preventDefault();
         setError("");
         setMessage("");
+
+        const trimmedOtp = otp.trim();
+
+        if (trimmedOtp.length !== 6) {
+            setError("Please enter a valid 6-digit OTP.");
+            return;
+        }
 
         if (newPassword.length < 6) {
             setError("Password must contain at least 6 characters.");
@@ -49,14 +82,14 @@ function ForgotPassword() {
 
         try {
             const response = await api.post("/auth/reset-password", {
-                email,
-                otp,
+                email: email.trim().toLowerCase(),
+                otp: trimmedOtp,
                 newPassword
             });
-            setMessage(response.data.message);
+            setMessage(response.data.message || "Password reset successful! Redirecting to login...");
             setTimeout(() => {
-                window.location.href = "/login";
-            }, 1800);
+                navigate("/login");
+            }, 1500);
         } catch (err) {
             setError(err.response?.data?.message || "Could not reset password. Please try again.");
         } finally {
@@ -105,6 +138,7 @@ function ForgotPassword() {
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
                                     required
+                                    autoFocus
                                 />
                             </div>
                             <button className="auth-submit" disabled={loading}>
@@ -114,7 +148,19 @@ function ForgotPassword() {
                         </form>
                     ) : (
                         <form onSubmit={handleResetPassword}>
-                            <label>6-Digit OTP</label>
+                            <div className="password-label-row">
+                                <label>6-Digit OTP</label>
+                                <button
+                                    type="button"
+                                    className="text-action"
+                                    disabled={resendCooldown > 0 || loading}
+                                    onClick={() => handleSendOtp()}
+                                    style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}
+                                >
+                                    <RefreshCw size={12} />
+                                    {resendCooldown > 0 ? `Resend OTP (${resendCooldown}s)` : "Resend OTP"}
+                                </button>
+                            </div>
                             <div className="input-wrapper">
                                 <ShieldCheck size={18} />
                                 <input
@@ -122,10 +168,11 @@ function ForgotPassword() {
                                     inputMode="numeric"
                                     pattern="[0-9]{6}"
                                     maxLength={6}
-                                    placeholder="Enter OTP"
+                                    placeholder="Enter 6-digit OTP"
                                     value={otp}
                                     onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
                                     required
+                                    autoFocus
                                 />
                             </div>
 

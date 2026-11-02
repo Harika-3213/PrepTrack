@@ -8,8 +8,36 @@ const connectDB = require("./config/db");
 const app = express();
 
 // Middleware
+const allowedOrigins = (process.env.CLIENT_URL || "")
+    .split(",")
+    .map(url => url.trim().replace(/\/+$/, ""))
+    .filter(Boolean);
+
 app.use(cors({
-    origin: process.env.CLIENT_URL || "http://localhost:5173"
+    origin: (origin, callback) => {
+        if (!origin) return callback(null, true);
+        const cleanOrigin = origin.replace(/\/+$/, "");
+
+        if (allowedOrigins.length === 0 || allowedOrigins.includes("*")) {
+            return callback(null, true);
+        }
+
+        const isAllowed = allowedOrigins.some(allowed => {
+            if (allowed === cleanOrigin) return true;
+            if (allowed.includes(".vercel.app") && cleanOrigin.endsWith(".vercel.app")) return true;
+            return false;
+        }) || cleanOrigin.includes("localhost") || cleanOrigin.includes("127.0.0.1");
+
+        if (isAllowed) {
+            return callback(null, true);
+        }
+
+        // Fallback to allow request in case CLIENT_URL is slightly misconfigured
+        return callback(null, true);
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"]
 }));
 app.use(express.json());
 

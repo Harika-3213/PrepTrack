@@ -20,6 +20,23 @@ const userSchema = new mongoose.Schema({
     completedQuestions: {
         type: [String],
         default: []
+    },
+    resetOtpHash: {
+        type: String,
+        select: false
+    },
+    resetOtpExpires: {
+        type: Date,
+        select: false
+    },
+    resetOtpAttempts: {
+        type: Number,
+        default: 0,
+        select: false
+    },
+    resetOtpRequestedAt: {
+        type: Date,
+        select: false
     }
 }, { timestamps: true });
 

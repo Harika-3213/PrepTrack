@@ -7,12 +7,12 @@ import Companies from "./pages/Companies";
 
 import Login from "./pages/Login";
 import Register from "./pages/Register";
+import ForgotPassword from "./pages/ForgotPassword";
 import Dashboard from "./pages/Dashboard";
 import Questions from "./pages/Questions";
 import Goals from "./pages/Goals";
 import Aptitude from "./pages/Aptitude";
 import Notes from "./pages/Notes";
-
 
 const ProtectedLayout = ({ children }) => {
     const { user } = useAuth();
@@ -36,39 +36,15 @@ function App() {
     return (
         <BrowserRouter>
             <Routes>
-                <Route
-                    path="/login"
-                    element={user ? <Navigate to="/" /> : <Login />}
-                />
-
-                <Route
-                    path="/register"
-                    element={user ? <Navigate to="/" /> : <Register />}
-                />
-
-                <Route path="/" element={
-                    <ProtectedLayout><Dashboard /></ProtectedLayout>
-                } />
-                <Route path="/companies" element={
-                    <ProtectedLayout><Companies /></ProtectedLayout>
-                } />
-
-                <Route path="/questions" element={
-                    <ProtectedLayout><Questions /></ProtectedLayout>
-                } />
-
-                <Route path="/goals" element={
-                    <ProtectedLayout><Goals /></ProtectedLayout>
-                } />
-
-                <Route path="/aptitude" element={
-                    <ProtectedLayout><Aptitude /></ProtectedLayout>
-                } />
-
-                <Route path="/notes" element={
-                    <ProtectedLayout><Notes /></ProtectedLayout>
-                } />
-
+                <Route path="/login" element={user ? <Navigate to="/" /> : <Login />} />
+                <Route path="/register" element={user ? <Navigate to="/" /> : <Register />} />
+                <Route path="/forgot-password" element={user ? <Navigate to="/" /> : <ForgotPassword />} />
+                <Route path="/" element={<ProtectedLayout><Dashboard /></ProtectedLayout>} />
+                <Route path="/companies" element={<ProtectedLayout><Companies /></ProtectedLayout>} />
+                <Route path="/questions" element={<ProtectedLayout><Questions /></ProtectedLayout>} />
+                <Route path="/goals" element={<ProtectedLayout><Goals /></ProtectedLayout>} />
+                <Route path="/aptitude" element={<ProtectedLayout><Aptitude /></ProtectedLayout>} />
+                <Route path="/notes" element={<ProtectedLayout><Notes /></ProtectedLayout>} />
                 <Route path="*" element={<Navigate to={user ? "/" : "/login"} />} />
             </Routes>
         </BrowserRouter>
